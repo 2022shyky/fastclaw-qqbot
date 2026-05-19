@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -282,6 +286,8 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 			Text: content, PeerKind: "dm", SenderName: truncate(userID, 8),
 			Account: config.AppID,
 		})
+		// 直接通过 Chat API 回复（绕过 Gateway owner 解析）
+		go replyViaChatAPI(userID, content)
 
 	case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
 		groupID := data.GroupOpenID
@@ -359,3 +365,88 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 		logf("[dispatch] UNHANDLED eventType=%s", eventType)
 	}
 }
+
+
+// ── Chat API 直接回复（绕过 Gateway owner 解析） ──
+
+func replyViaChatAPI(userOpenID, text string) {
+	apiKey := os.Getenv("FASTCLAW_API_KEY")
+	if apiKey == "" {
+		logf("[chat] FASTCLAW_API_KEY 未设置，跳过 Chat API")
+		return
+	}
+	agentID := os.Getenv("FASTCLAW_AGENT_ID")
+	if agentID == "" {
+		agentID = "agt_c255b73a23f7d9643ae6"
+	}
+
+	payload := map[string]interface{}{
+		"agentId":   agentID,
+		"sessionId": "qq_" + truncate(userOpenID, 12),
+		"message":   text,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", "http://localhost:18953/api/chat/stream",
+		bytes.NewReader(body))
+	if err != nil {
+		logf("[chat] 创建请求失败: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		logf("[chat] Chat API 请求失败: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		logf("[chat] Chat API HTTP %d", resp.StatusCode)
+		return
+	}
+
+	// 读取流式回复
+	var reply strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			reply.Write(buf[:n])
+		}
+		if err == io.EOF {
+			break
+		}
+	}
+
+	// 简单解析 SSE 格式，提取 content
+	replyText := strings.Builder{}
+	for _, line := range strings.Split(reply.String(), "\n") {
+		if strings.HasPrefix(line, "data: ") {
+			var data struct {
+				Type string `json:"type"`
+				Data struct {
+					Content string `json:"content"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(line[6:]), &data); err == nil {
+				if data.Type == "content" {
+					replyText.WriteString(data.Data.Content)
+				}
+			}
+		}
+	}
+
+	replyStr := strings.TrimSpace(replyText.String())
+	if replyStr == "" {
+		logf("[chat] AI 回复为空")
+		return
+	}
+
+	logf("[chat] AI 回复成功: %s", truncate(replyStr, 100))
+	sendC2CMessage(userOpenID, replyStr, "")
+}
+
