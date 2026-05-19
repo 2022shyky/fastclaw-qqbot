@@ -280,6 +280,7 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 		notifyInbound(InboundMessage{
 			Channel: "qqbot", ChatID: chatKey, UserID: userID,
 			Text: content, PeerKind: "dm", SenderName: truncate(userID, 8),
+			Account: config.AppID,
 		})
 
 	case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
@@ -307,6 +308,7 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 		notifyInbound(InboundMessage{
 			Channel: "qqbot", ChatID: chatKey, UserID: senderID,
 			Text: content, PeerKind: "group", SenderName: senderName,
+			Account: config.AppID,
 		})
 
 	case "AT_MESSAGE_CREATE", "MESSAGE_CREATE":
@@ -330,6 +332,7 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 		notifyInbound(InboundMessage{
 			Channel: "qqbot", ChatID: chatKey, UserID: authorID,
 			Text: content, PeerKind: "group", SenderName: senderName,
+			Account: config.AppID,
 		})
 
 	case "DIRECT_MESSAGE_CREATE":
@@ -349,6 +352,7 @@ func handleDispatch(eventType string, raw json.RawMessage) {
 		notifyInbound(InboundMessage{
 			Channel: "qqbot", ChatID: chatKey, UserID: authorID,
 			Text: content, PeerKind: "dm", SenderName: senderName,
+			Account: config.AppID,
 		})
 
 	default:

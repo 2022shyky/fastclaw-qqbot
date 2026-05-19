@@ -42,6 +42,7 @@ type InboundMessage struct {
 	Text       string `json:"text"`
 	PeerKind   string `json:"peerKind"`
 	SenderName string `json:"senderName"`
+	Account    string `json:"account,omitempty"`
 }
 
 // ── JSON-RPC I/O ──
